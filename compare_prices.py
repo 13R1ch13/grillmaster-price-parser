@@ -1,22 +1,29 @@
-import requests
-from bs4 import BeautifulSoup
+import time
+import re
 import pandas as pd
 from datetime import datetime
-import re
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
+# ====== URLs ======
 OUR_URL = "https://grillmaster.dp.ua/hazovi-hryli/"
 COMPETITOR_URL = "https://bbq24.com.ua/ua/gazovye-grili/"
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/115.0 Safari/537.36"
-    )
-}
+# ====== Настройки Selenium ======
+def get_driver():
+    options = Options()
+    options.add_argument("--headless")  # без графического интерфейса
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--window-size=1920,1080")
+    return webdriver.Chrome(options=options)
 
+# ====== Вспомогательные ======
 def clean_name(name):
     name = name.lower()
     name = re.sub(r"[^a-zа-я0-9\s]", "", name)
@@ -26,42 +33,56 @@ def parse_price(price_text):
     digits = re.sub(r"[^\d]", "", price_text)
     return int(digits) if digits else None
 
-# ===== Универсальный парсер Grill Master =====
-def parse_grillmaster():
-    response = requests.get(OUR_URL, headers=HEADERS)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
+# ====== Прокрутка страницы ======
+def scroll_page(driver):
+    last_height = driver.execute_script("return document.body.scrollHeight")
+    while True:
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(2)
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            break
+        last_height = new_height
+
+# ====== Парсер Grill Master ======
+def parse_grillmaster(driver):
+    driver.get(OUR_URL)
+    time.sleep(2)
+    scroll_page(driver)
 
     products = {}
-    cards = soup.find_all(class_=lambda x: x and "product" in x)
+    cards = driver.find_elements(By.CSS_SELECTOR, ".product")
     for card in cards:
-        title_tag = card.find("h2")
-        price_tag = card.find("span", class_=lambda x: x and "amount" in x)
-        if title_tag and price_tag:
-            title = clean_name(title_tag.get_text(strip=True))
-            price = parse_price(price_tag.get_text(strip=True))
+        try:
+            title = clean_name(card.find_element(By.CSS_SELECTOR, "h2").text)
+            price = parse_price(card.find_element(By.CSS_SELECTOR, ".amount").text)
             if price:
                 products[title] = price
+        except:
+            continue
     return products
 
-# ===== Универсальный парсер BBQ24 =====
-def parse_bbq24():
-    response = requests.get(COMPETITOR_URL, headers=HEADERS)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
+# ====== Парсер BBQ24 ======
+def parse_bbq24(driver):
+    driver.get(COMPETITOR_URL)
+    time.sleep(2)
+    scroll_page(driver)
 
     products = {}
-    cards = soup.find_all(class_=lambda x: x and ("ty-grid-list" in x or "ut2-gl" in x))
+    cards = driver.find_elements(By.CSS_SELECTOR, ".ut2-gl__item") or driver.find_elements(By.CSS_SELECTOR, ".ty-grid-list__item")
     for card in cards:
-        title_tag = card.find("a") or card.find("div")
-        price_tag = card.find(class_=lambda x: x and "price" in x)
-        if title_tag and price_tag:
-            title = clean_name(title_tag.get_text(strip=True))
-            price = parse_price(price_tag.get_text(strip=True))
-            if price:
-                products[title] = price
+        try:
+            title = clean_name(card.text.split("\n")[0])
+            price_elements = card.find_elements(By.CSS_SELECTOR, ".ty-price, .price")
+            if price_elements:
+                price = parse_price(price_elements[0].text)
+                if price:
+                    products[title] = price
+        except:
+            continue
     return products
 
+# ====== Сравнение ======
 def compare_prices(our_prices, competitor_prices):
     rows = []
     for our_name, our_price in our_prices.items():
@@ -81,6 +102,7 @@ def compare_prices(our_prices, competitor_prices):
             rows.append([our_name, our_price, None, None])
     return rows
 
+# ====== Сохранение в Excel ======
 def save_to_excel(data):
     df = pd.DataFrame(data, columns=["Товар", "Наша цена", "Цена конкурента", "Разница"])
     filename = f"comparison_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
@@ -106,14 +128,19 @@ def save_to_excel(data):
     wb.save(filename)
     print(f"✅ Результат сохранён в {filename}")
 
+# ====== Запуск ======
 if __name__ == "__main__":
+    driver = get_driver()
+
     print("📦 Парсим наш сайт...")
-    our_prices = parse_grillmaster()
+    our_prices = parse_grillmaster(driver)
     print(f"  Найдено {len(our_prices)} товаров.")
 
     print("📦 Парсим сайт конкурента...")
-    competitor_prices = parse_bbq24()
+    competitor_prices = parse_bbq24(driver)
     print(f"  Найдено {len(competitor_prices)} товаров.")
+
+    driver.quit()
 
     print("📊 Сравниваем цены...")
     comparison_data = compare_prices(our_prices, competitor_prices)
