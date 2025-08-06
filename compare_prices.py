@@ -6,6 +6,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
@@ -13,7 +14,7 @@ from openpyxl.styles import PatternFill
 OUR_URL = "https://grillmaster.dp.ua/hazovi-hryli/"
 COMPETITOR_URL = "https://bbq24.com.ua/ua/gazovye-grili/"
 
-# ====== Настройки Selenium ======
+# ====== Настройки Selenium (автоустановка драйвера) ======
 def get_driver():
     options = Options()
     options.add_argument("--headless")  # без графического интерфейса
@@ -21,7 +22,7 @@ def get_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--window-size=1920,1080")
-    return webdriver.Chrome(options=options)
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 # ====== Вспомогательные ======
 def clean_name(name):
@@ -69,7 +70,7 @@ def parse_bbq24(driver):
     scroll_page(driver)
 
     products = {}
-    cards = driver.find_elements(By.CSS_SELECTOR, ".ut2-gl__item") or driver.find_elements(By.CSS_SELECTOR, ".ty-grid-list__item")
+    cards = driver.find_elements(By.CSS_SELECTOR, ".ut2-gl__item, .ty-grid-list__item")
     for card in cards:
         try:
             title = clean_name(card.text.split("\n")[0])
