@@ -10,9 +10,18 @@ from openpyxl.styles import PatternFill
 OUR_URL = "https://grillmaster.dp.ua/hazovi-hryli/"
 COMPETITOR_URL = "https://bbq24.com.ua/ua/gazovye-grili/"
 
+# ====== Заголовки для обхода блокировок ======
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/115.0 Safari/537.36"
+    )
+}
+
 # ====== Парсер нашего сайта ======
 def parse_grillmaster():
-    response = requests.get(OUR_URL)
+    response = requests.get(OUR_URL, headers=HEADERS)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
 
@@ -28,7 +37,7 @@ def parse_grillmaster():
 
 # ====== Парсер BBQ24 ======
 def parse_bbq24():
-    response = requests.get(COMPETITOR_URL)
+    response = requests.get(COMPETITOR_URL, headers=HEADERS)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
 
@@ -61,7 +70,7 @@ def compare_prices(our_prices, competitor_prices):
         competitor_price = None
 
         for comp_name, comp_price in competitor_prices.items():
-            # Поиск по вхождению названия
+            # Проверяем вхождение хотя бы первых 2 слов
             if all(word in comp_name for word in our_name.split()[:2]):  
                 matched_competitor = comp_name
                 competitor_price = comp_price
@@ -85,9 +94,9 @@ def save_to_excel(data):
     wb = load_workbook(filename)
     ws = wb.active
 
-    green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-    red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-    gray_fill = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")
+    green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")  # зелёный
+    red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")    # красный
+    gray_fill = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")   # серый
 
     for row in range(2, ws.max_row + 1):
         diff = ws.cell(row=row, column=4).value
